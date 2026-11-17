@@ -227,6 +227,13 @@ function DateTimeRangePickerComponent({
         endTime = end.format(DATE_FORMATS.time);
         break;
 
+      case QUICK_FILTER_KEYS.TODAY:
+        start = now.startOf(DATE_UNITS.DAY);
+        end = now;
+        startTime = TIME_CONSTANTS.MIDNIGHT;
+        endTime = end.format(DATE_FORMATS.time);
+        break;
+
       case QUICK_FILTER_KEYS.LAST_2_DAYS:
         start = now.subtract(2, DATE_UNITS.DAY).startOf(DATE_UNITS.DAY);
         end = now;
@@ -236,6 +243,20 @@ function DateTimeRangePickerComponent({
 
       case QUICK_FILTER_KEYS.LAST_7_DAYS:
         start = now.subtract(7, DATE_UNITS.DAY).startOf(DATE_UNITS.DAY);
+        end = now;
+        startTime = TIME_CONSTANTS.MIDNIGHT;
+        endTime = end.format(DATE_FORMATS.time);
+        break;
+
+      case QUICK_FILTER_KEYS.LAST_30_DAYS:
+        start = now.subtract(30, DATE_UNITS.DAY).startOf(DATE_UNITS.DAY);
+        end = now;
+        startTime = TIME_CONSTANTS.MIDNIGHT;
+        endTime = end.format(DATE_FORMATS.time);
+        break;
+
+      case QUICK_FILTER_KEYS.THIS_MONTH:
+        start = now.startOf("month");
         end = now;
         startTime = TIME_CONSTANTS.MIDNIGHT;
         endTime = end.format(DATE_FORMATS.time);

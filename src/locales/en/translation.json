@@ -114,7 +114,30 @@
     "DATA_IMPORT": "Data Import",
     "LOW_STOCK": "Low Stock",
     "PRODUCT_INVENTORY":"Product Inventory",
-    "CANCELLATIONS":"Cancellations"
+    "CANCELLATIONS":"Cancellations",
+    "AI_CHAT": "AI Chat Board"
+  },
+  "CHAT_BOARD": {
+    "TITLE": "AI Chat Board",
+    "SUBTITLE": "Interact with your store assistant using authenticated token APIs",
+    "PLACEHOLDER": "Type a message... (Press Enter to send)",
+    "SEND": "Send",
+    "CLEAR": "Clear Chat",
+    "CLEAR_CONFIRM": "Are you sure you want to clear this conversation?",
+    "ONLINE": "Connected",
+    "TOKEN_ACTIVE": "Token Active",
+    "TYPING": "AI Assistant is thinking...",
+    "COPY": "Copy message",
+    "COPIED": "Copied!",
+    "ERROR_TITLE": "Failed to get AI response",
+    "RETRY": "Retry",
+    "WELCOME_TITLE": "Welcome to your AI Chat Board!",
+    "WELCOME_DESC": "Ask anything about your store orders, products, customers, or revenue. Queries are authenticated using your session token.",
+    "SUGGESTION_TITLE": "Try asking:",
+    "SUGGESTION_1": "Show total revenue and orders today",
+    "SUGGESTION_2": "List recent orders and their status",
+    "SUGGESTION_3": "Which products are running low in stock?",
+    "SUGGESTION_4": "How many active stores are registered?"
   },
   "REASON_MANAGEMENT": {
     "TITLE": "Reason Management",

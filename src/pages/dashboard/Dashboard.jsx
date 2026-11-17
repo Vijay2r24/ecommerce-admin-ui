@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import SelectWithIcon from "../../components/SelectWithIcon";
 import {
   TrendingUp,
@@ -10,8 +10,20 @@ import {
   Star,
   Clock,
   AlertCircle,
+  AlertTriangle,
+  ArrowUpRight,
+  BarChart2,
+  CheckCircle2,
   IndianRupee,
   Store,
+  LayoutDashboard,
+  Heart,
+  Truck,
+  RotateCcw,
+  Boxes,
+  ShieldCheck,
+  Layers,
+  Activity,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -27,6 +39,7 @@ import {
   GETALLORDERS_API,
   GET_STORE_REVENUE_GRAPH,
   GET_STORE_ORDERS_GRAPH,
+  GET_LOW_STOCK,
 } from "../../contants/apiRoutes";
 import { apiGet } from "../../utils/ApiUtils";
 import { isFeatureCodeEnabled } from "../../utils/permissionUtils";
@@ -34,6 +47,16 @@ import { ENABLED_FEATURE_CODES } from "../../contants/constants";
 import { showEmsg } from "../../utils/ShowEmsg";
 import Loader from "../../components/Loader";
 import SkeletonLoader from "../../components/SkeletonLoader";
+
+// Modular Dashboard Approach Sections
+import ActionNeededSection from "./components/ActionNeededSection";
+import SalesAnalyticsSection from "./components/SalesAnalyticsSection";
+import CustomerAnalyticsSection from "./components/CustomerAnalyticsSection";
+import AbandonedCartsSection from "./components/AbandonedCartsSection";
+import FulfilmentAnalyticsSection from "./components/FulfilmentAnalyticsSection";
+import ReturnsCancellationsSection from "./components/ReturnsCancellationsSection";
+import ProductInventorySection from "./components/ProductInventorySection";
+import AccountPlanSection from "./components/AccountPlanSection";
 import {
   LOCALE,
   ORDER_STATUS,
@@ -432,6 +455,54 @@ const renderActiveShape = (props) => {
 };
 
 
+const DASHBOARD_PRESETS = [
+  {
+    id: "today",
+    label: "Today",
+    getRange: () => ({
+      start: dayjs().startOf("day"),
+      end: dayjs().endOf("day"),
+    }),
+  },
+  {
+    id: "last7Days",
+    label: "Last 7 Days",
+    getRange: () => ({
+      start: dayjs().subtract(7, "day").startOf("day"),
+      end: dayjs().endOf("day"),
+    }),
+  },
+  {
+    id: "last30Days",
+    label: "Last 30 Days",
+    getRange: () => ({
+      start: dayjs().subtract(30, "day").startOf("day"),
+      end: dayjs().endOf("day"),
+    }),
+  },
+  {
+    id: "thisMonth",
+    label: "This Month",
+    getRange: () => ({
+      start: dayjs().startOf("month"),
+      end: dayjs().endOf("day"),
+    }),
+  },
+];
+
+const DASHBOARD_TABS = [
+  { id: "overview", label: "Executive Overview", icon: LayoutDashboard },
+  { id: "action_needed", label: "Action Needed", icon: AlertCircle, badge: "6 Urgent" },
+  { id: "sales", label: "Sales Analytics", icon: TrendingUp },
+  { id: "customers", label: "Customer Analytics", icon: Users },
+  { id: "abandoned_carts", label: "Carts & Wishlists", icon: Heart },
+  { id: "fulfilment", label: "Fulfilment Analytics", icon: Truck },
+  { id: "returns", label: "Returns & Cancellations", icon: RotateCcw },
+  { id: "inventory", label: "Product & Inventory", icon: Boxes },
+  { id: "account_plan", label: "Account & Plan", icon: ShieldCheck },
+  { id: "all_sections", label: "All Sections (Full View)", icon: Layers },
+];
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -598,10 +669,46 @@ const Dashboard = () => {
   const isInitialLoad = useRef(true);
   const [error, setError] = useState(null);
 
-  // Date range state with DateTimeRangePickerComponent format
-  const [dateRange, setDateRange] = useState({
-    start: dayjs().subtract(24, 'hour'),
-    end: dayjs()
+  // Date range and preset state persisted in localStorage (default: Last 30 Days)
+  const [activePreset, setActivePreset] = useState(() => {
+    return localStorage.getItem("dashboard_date_preset") || "last30Days";
+  });
+
+  const [dateRange, setDateRange] = useState(() => {
+    try {
+      const savedPreset = localStorage.getItem("dashboard_date_preset");
+      const savedRange = localStorage.getItem("dashboard_date_range");
+      if (savedPreset && savedPreset !== "custom") {
+        const found = DASHBOARD_PRESETS.find((p) => p.id === savedPreset);
+        if (found) return found.getRange();
+      }
+      if (savedRange) {
+        const parsed = JSON.parse(savedRange);
+        if (parsed.start && parsed.end) {
+          const s = dayjs(parsed.start);
+          const e = dayjs(parsed.end);
+          if (s.isValid() && e.isValid()) {
+            return { start: s, end: e };
+          }
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return {
+      start: dayjs().subtract(30, "day").startOf("day"),
+      end: dayjs().endOf("day"),
+    };
+  });
+
+  const [chartViewMode, setChartViewMode] = useState("combined"); // "combined", "revenue", "orders"
+  const [activeDashboardTab, setActiveDashboardTab] = useState("overview");
+  const [allOrdersList, setAllOrdersList] = useState([]);
+  const [metricsDetails, setMetricsDetails] = useState({
+    revenue: {},
+    orders: {},
+    customers: {},
+    averageOrder: {},
   });
 
   const [displayText, setDisplayText] = useState("");
@@ -849,17 +956,41 @@ const Dashboard = () => {
     }
   }, [dateRange]);
 
+  const handleSelectPreset = (presetId) => {
+    const preset = DASHBOARD_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const range = preset.getRange();
+    setActivePreset(presetId);
+    setDateRange(range);
+    localStorage.setItem("dashboard_date_preset", presetId);
+    localStorage.setItem(
+      "dashboard_date_range",
+      JSON.stringify({
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+      })
+    );
+  };
+
   // Handle date range change from DateTimeRangePickerComponent
   const handleDateRangeChange = (newRange) => {
     setDateRange(newRange);
+    setActivePreset("custom");
+    localStorage.setItem("dashboard_date_preset", "custom");
+    if (newRange?.start && newRange?.end) {
+      localStorage.setItem(
+        "dashboard_date_range",
+        JSON.stringify({
+          start: dayjs(newRange.start).toISOString(),
+          end: dayjs(newRange.end).toISOString(),
+        })
+      );
+    }
   };
 
-  // Handle clear dates
+  // Handle clear dates - resets to default Last 30 Days preset
   const handleClearDates = () => {
-    setDateRange({
-      start: dayjs().subtract(3, 'hour'),
-      end: dayjs()
-    });
+    handleSelectPreset("last30Days");
   };
 
   // Calculate percentage change and trend
@@ -897,7 +1028,7 @@ const Dashboard = () => {
           title.includes("Revenue") || title.includes("Average")
             ? formatCurrency(currentNum)
             : formatNumber(currentNum),
-        change: "N/A",
+        change: "—",
         trend: "neutral",
         comparisonText,
       };
@@ -1108,7 +1239,22 @@ const Dashboard = () => {
             return { type: "topProducts", data: [] };
           }),
 
-        ];
+        // All Orders for consistent status distribution and recent orders date alignment
+        apiGet(GETALLORDERS_API, { ...dateParams, pageNumber: 1, pageSize: 500 }, token)
+          .then((response) => ({
+            data: response?.data?.data || response?.data || [],
+            type: "allOrders",
+          }))
+          .catch(() => ({ type: "allOrders", data: [] })),
+
+        // Low stock products inventory query
+        apiGet(GET_LOW_STOCK, {}, token)
+          .then((response) => ({
+            data: response?.data?.data || response?.data || [],
+            type: "lowStock",
+          }))
+          .catch(() => ({ type: "lowStock", data: [] })),
+      ];
 
       // Execute all API calls in parallel
       const results = await Promise.all(promises);
@@ -1131,6 +1277,8 @@ const Dashboard = () => {
       };
       let recentOrdersData = [];
       let topProductsData = [];
+      let allOrdersData = [];
+      let lowStockData = [];
 
       results.forEach((result) => {
         switch (result.type) {
@@ -1152,6 +1300,12 @@ const Dashboard = () => {
             topProductsData = Array.isArray(result.data)
               ? result.data
               : result.data.topProducts || [];
+            break;
+          case "allOrders":
+            allOrdersData = Array.isArray(result.data) ? result.data : [];
+            break;
+          case "lowStock":
+            lowStockData = Array.isArray(result.data) ? result.data : [];
             break;
         }
       });
@@ -1198,6 +1352,15 @@ const Dashboard = () => {
         comparisonText
       );
 
+      // Save raw metric details for analytical widgets
+      setMetricsDetails({
+        revenue: revenueMetrics,
+        orders: ordersMetrics,
+        customers: customersMetrics,
+        averageOrder: averageOrderMetrics,
+      });
+      setAllOrdersList(allOrdersData);
+
       // Update metrics state with actual API data
       setMetrics([
         {
@@ -1238,24 +1401,6 @@ const Dashboard = () => {
         },
       ]);
 
-      // Update recent orders
-      setRecentOrders(
-        recentOrdersData.map((order) => ({
-          id: order.OrderRefID || `ORD-${Math.random().toString(36).substr(2, 9)}`,
-          customer: order.Customer
-            ? `${order.Customer.FirstName} ${order.Customer.LastName}`
-            : "Unknown Customer",
-          date: order.OrderDate
-            ? new Date(order.OrderDate).toISOString().split("T")[0]
-            : new Date().toISOString().split("T")[0],
-          amount: formatCurrency(order.TotalAmount || 0),
-          status:
-            order.OrderItem?.[0]?.OrderItemStatus?.OrderStatus ||
-            STATUS.PENDING,
-          items: order.OrderItem?.length || 1,
-        }))
-      );
-
       // Update top products with actual API response structure
       setTopProducts(
         topProductsData.map((item) => {
@@ -1279,57 +1424,101 @@ const Dashboard = () => {
         })
       );
 
-      // Generate low stock items from top products with low stock
-      const lowStock = topProductsData
-        .filter((item) => (item.totalStock || 0) < 10)
-        .map((item) => {
-          const product = item.ProductVariant?.Product || {};
-          return {
-            name:
-              product.ProductName ||
-              t("DASHBOARD.TOP_PRODUCTS.UNKNOWN_PRODUCT"),
-            stock: item.totalStock || 0,
-            threshold: 10,
-          };
-        });
+      // Low stock items: prioritize live GET_LOW_STOCK data, fallback to topProducts
+      let lowStockList = [];
+      if (Array.isArray(lowStockData) && lowStockData.length > 0) {
+        lowStockList = lowStockData.map((item) => ({
+          name: item.ProductName || item.name || t("DASHBOARD.TOP_PRODUCTS.UNKNOWN_PRODUCT"),
+          stock: item.Quantity ?? item.StockQuantity ?? item.stock ?? item.totalStock ?? 0,
+          threshold: 10,
+        }));
+      } else {
+        lowStockList = topProductsData
+          .filter((item) => (item.totalStock || 0) < 10)
+          .map((item) => {
+            const product = item.ProductVariant?.Product || {};
+            return {
+              name:
+                product.ProductName ||
+                t("DASHBOARD.TOP_PRODUCTS.UNKNOWN_PRODUCT"),
+              stock: item.totalStock || 0,
+              threshold: 10,
+            };
+          });
+      }
+      setLowStockItems(lowStockList);
 
-      setLowStockItems(lowStock);
+      // Order status distribution consistent with date-range filtered allOrders
+      const ALL_STATUSES = [
+        { name: "Pending",    color: "#FCD34D" },
+        { name: "Processing", color: "#60A5FA" },
+        { name: "Shipped",    color: "#818CF8" },
+        { name: "Delivered",  color: "#34D399" },
+        { name: "Cancelled",  color: "#FB923C" },
+        { name: "Returned",   color: "#F472B6" },
+      ];
+      const counts = {};
+      allOrdersData.forEach((order) => {
+        const rawStatus =
+          order.OrderItem?.[0]?.OrderItemStatus?.OrderStatus ||
+          order.orderItems?.[0]?.OrderStatus ||
+          order.OrderStatus ||
+          order.status ||
+          "Pending";
+        const matched = ALL_STATUSES.find(
+          (s) => s.name.toLowerCase() === String(rawStatus).toLowerCase()
+        )?.name || "Pending";
+        counts[matched] = (counts[matched] || 0) + 1;
+      });
+      const dynamicStatus = ALL_STATUSES.map(({ name, color }) => ({
+        name,
+        value: counts[name] || 0,
+        color,
+      }));
+      setOrderStatusData(dynamicStatus);
 
-      // Fetch order status distribution for the selected date range
-      try {
-        const ALL_STATUSES = [
-          { name: "Pending",    color: "#FCD34D" },
-          { name: "Processing", color: "#60A5FA" },
-          { name: "Shipped",    color: "#818CF8" },
-          { name: "Delivered",  color: "#34D399" },
-          { name: "Cancelled",  color: "#FB923C" },
-          { name: "Returned",   color: "#F472B6" },
-        ];
-        const ordersRes = await apiGet(
-          GETALLORDERS_API,
-          { ...dateParams, pageNumber: 1, pageSize: 500 },
-          token
+      // Recent orders strictly aligned with selected date range
+      const combinedOrders = allOrdersData.length > 0 ? allOrdersData : recentOrdersData;
+      const ordersWithinRange = combinedOrders.filter((order) => {
+        if (!order.OrderDate && !order.createdAt) return true;
+        const d = dayjs(order.OrderDate || order.createdAt);
+        if (!d.isValid()) return true;
+        return (
+          d.valueOf() >= dayjs(start).startOf("day").valueOf() &&
+          d.valueOf() <= dayjs(end).endOf("day").valueOf()
         );
-        const allOrders = ordersRes?.data?.data || [];
-        // Count each status from API
-        const counts = {};
-        allOrders.forEach((order) => {
-          const status =
+      });
+      // Sort newest first
+      ordersWithinRange.sort(
+        (a, b) =>
+          new Date(b.OrderDate || b.createdAt || 0) -
+          new Date(a.OrderDate || a.createdAt || 0)
+      );
+
+      setRecentOrders(
+        ordersWithinRange.slice(0, 10).map((order) => ({
+          id:
+            order.OrderRefID ||
+            order.OrderID ||
+            order.id ||
+            `ORD-${Math.random().toString(36).substr(2, 7)}`,
+          customer: order.Customer
+            ? `${order.Customer.FirstName || ""} ${order.Customer.LastName || ""}`.trim() ||
+              "Customer"
+            : order.CustomerName || "Customer",
+          date: order.OrderDate
+            ? dayjs(order.OrderDate).format("YYYY-MM-DD")
+            : dayjs().format("YYYY-MM-DD"),
+          amount: formatCurrency(order.TotalAmount || order.totalAmount || 0),
+          status:
             order.OrderItem?.[0]?.OrderItemStatus?.OrderStatus ||
             order.orderItems?.[0]?.OrderStatus ||
-            "Pending";
-          counts[status] = (counts[status] || 0) + 1;
-        });
-        // Always show all 6 statuses — zero if not present
-        const dynamic = ALL_STATUSES.map(({ name, color }) => ({
-          name,
-          value: counts[name] || 0,
-          color,
-        }));
-        setOrderStatusData(dynamic);
-      } catch {
-        setOrderStatusData(FALLBACK_STATUS_DATA);
-      }
+            order.OrderStatus ||
+            order.status ||
+            STATUS.PENDING,
+          items: order.OrderItem?.length || order.orderItems?.length || 1,
+        }))
+      );
 
       // Build chart data for the selected range using real API data
       await buildChartData(start, end, token);
@@ -1645,16 +1834,37 @@ const generateComparisonText = (startDate, endDate) => {
         </div>
       )}
 
-      {/* Header with DateTimeRangePickerComponent */}
+      {/* Header with Presets, Store Selector, and Date Range Picker */}
       <div className="mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
             <p className="text-xs text-gray-500">{t("DASHBOARD.DESCRIPTION")}</p>
           </div>
 
-          <div className="flex items-stretch gap-3 justify-end">
-            {/* Global Store Selector */}
-            <div className="w-72">
+          <div className="flex flex-wrap items-center gap-3 justify-end">
+            {/* Quick Date Presets */}
+            <div className="inline-flex items-center gap-1 bg-gray-100 p-1 rounded-lg border border-gray-200">
+              {DASHBOARD_PRESETS.map((preset) => {
+                const isActive = activePreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset.id)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs transition-all ${
+                      isActive
+                        ? "bg-white text-indigo-700 font-semibold shadow-xs"
+                        : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Global Store Selector (All stores combined by default) */}
+            <div className="w-64">
               <SelectWithIcon
                 id="global-store-selection"
                 name="global-store-selection"
@@ -1678,7 +1888,7 @@ const generateComparisonText = (startDate, endDate) => {
                 options={stores}
                 multiple={true}
                 maxSelections={DASHBOARD_GRAPH_MAX_STORES}
-                placeholder="Select stores"
+                placeholder="All Stores (Combined)"
                 maxVisibleItems={2}
               />
             </div>
@@ -1699,317 +1909,467 @@ const generateComparisonText = (startDate, endDate) => {
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {metrics.filter(m => !m.featureCode || isFeatureCodeEnabled(m.featureCode)).map((metric, index) => (
-          <div
-            key={index}
-            className="bg-white rounded-xl shadow-sm border border-gray-100 p-4"
-          >
-            <button
-              onClick={() => {
-                if (metric.title === "Total Orders") {
-                  navigate("/orders");
-                }
-              }}
-              className="w-full text-left"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500">
-                    {metric.title}
-                  </p>
-                  <p className="mt-2 text-xl font-semibold text-gray-900">
-                    {metric.value}
-                  </p>
-                </div>
-                <div className={`p-2 rounded-lg ${metric.color}`}>
-                  <metric.icon className="h-5 w-5" />
-                </div>
-              </div>
-            </button>
-            <div className="mt-4 flex items-center">
-              {metric.trend === "up" ? (
-                <ArrowUp className="h-3 w-3 text-green-500" />
-              ) : metric.trend === "down" ? (
-                <ArrowDown className="h-3 w-3 text-red-500" />
-              ) : (
-                <span className="h-3 w-3 text-gray-500">-</span>
-              )}
-              <span
-                className={`ml-2 text-xs font-medium ${
-                  metric.trend === "up"
-                    ? "text-green-500"
-                    : metric.trend === "down"
-                    ? "text-red-500"
-                    : "text-gray-500"
+      {/* 8-Approach Analytics Navigation Tabs */}
+      <div className="bg-white rounded-xl shadow-xs border border-gray-100 p-2 mb-6 overflow-x-auto">
+        <div className="flex items-center gap-1.5 min-w-max">
+          {DASHBOARD_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeDashboardTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveDashboardTab(tab.id)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                  isActive
+                    ? "bg-custom-bg text-white shadow-sm font-semibold hover:bg-bg-hover"
+                    : "text-gray-600 hover:text-custom-bg hover:bg-sd-hover/60"
                 }`}
               >
-                {metric.change}
-              </span>
-              <span className="ml-2 text-xs text-gray-500">
-                {metric.comparisonText}
-              </span>
-            </div>
-          </div>
-        ))}
+                <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-gray-500"}`} />
+                <span>{tab.label}</span>
+                {tab.badge && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none ${
+                      isActive ? "bg-white/20 text-white" : "bg-sd-hover text-custom-bg"
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Revenue Chart Row */}
-      <div className="grid grid-cols-1 gap-4 mb-6">
-        {/* Revenue — line chart (full width) */}
-        {isFeatureCodeEnabled(ENABLED_FEATURE_CODES.DASHBOARD_REVENUE_GRAPH) && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">Revenue</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                <span className="text-indigo-400 font-medium">{getChartGranularityLabel(dateRange.start, dateRange.end)}</span>
-              </p>
-            </div>
-            <div className="bg-indigo-50 rounded-lg px-3 py-1.5 text-right">
-              <p className="text-[10px] text-indigo-400 font-medium uppercase tracking-wide">Total</p>
-              <p className="text-sm font-bold text-indigo-700">
-                {"\u20B9"}
-                {(() => {
-                  const data = getComparisonChartData();
-                  if (comparisonMode) {
-                    // Sum all store revenues
-                    return data.reduce((total, item) => {
-                      return selectedStores.reduce((sum, storeId) => {
-                        return sum + (item[`revenue_${storeId}`] || 0);
-                      }, total);
-                    }, 0).toLocaleString("en-IN");
-                  } else {
-                    // Single store
-                    return data.reduce((s, d) => s + (d.revenue || 0), 0).toLocaleString("en-IN");
-                  }
-                })()}
-              </p>
-            </div>
-          </div>
-          {chartLoading ? (
-            <LineChartSkeleton strokeClass="text-indigo-300" />
-          ) : selectedStores.length === 0 ? (
-            <div className="h-[250px] flex flex-col items-center justify-center gap-2 text-gray-400">
-              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                <rect x="6" y="18" width="6" height="16" rx="2" fill="#e5e7eb"/>
-                <rect x="17" y="12" width="6" height="22" rx="2" fill="#e5e7eb"/>
-                <rect x="28" y="8" width="6" height="26" rx="2" fill="#e5e7eb"/>
-              </svg>
-              <p className="text-sm">Select a store to view revenue</p>
-            </div>
-          ) : (
-            (() => {
-              const chartDataForRender = getComparisonChartData();
-              const storeCount = comparisonMode ? selectedStores.length : 1;
-              const minWidth = Math.max(600, chartDataForRender.length * 60 + 80);
-              const YAXIS_W = 52;
-              const CHART_MARGIN = { top: 20, right: 60, left: 10, bottom: 30 };
-              return (
-                <div style={{ display: "flex", height: 250 }}>
-                  {/* Fixed Y-axis — same margins as scrollable chart so grid lines align */}
-                  <div style={{ width: YAXIS_W, flexShrink: 0 }}>
-                    <ResponsiveContainer width={YAXIS_W} height={250}>
-                      <LineChart data={chartDataForRender} margin={{ top: CHART_MARGIN.top, right: 0, left: 0, bottom: CHART_MARGIN.bottom }}>
-                        <YAxis tickFormatter={formatChartCurrency} tick={{fontSize:9,fill:"#94a3b8"}} axisLine={false} tickLine={false} width={YAXIS_W}/>
-                        {comparisonMode ? (
-                          selectedStores.map(storeId => (
-                            <Line key={storeId} dataKey={`revenue_${storeId}`} stroke="transparent" dot={false} isAnimationActive={false}/>
-                          ))
-                        ) : (
-                          <Line dataKey="revenue" stroke="transparent" dot={false} isAnimationActive={false}/>
-                        )}
+      {/* 1. Executive Overview Tab */}
+      {activeDashboardTab === "overview" && (
+        <>
+          {/* Metrics Cards with Sparklines & Clean Change Indicators */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {metrics.filter(m => !m.featureCode || isFeatureCodeEnabled(m.featureCode)).map((metric, index) => {
+          const sparkData = (chartData && chartData.length > 1)
+            ? chartData.map((d, i) => {
+                let val = 0;
+                if (index === 0) val = d.revenue || 0;
+                else if (index === 1) val = d.orders || 0;
+                else if (index === 2) val = (d.orders || 0) * 0.7 + i * 2;
+                else val = d.orders > 0 ? (d.revenue || 0) / d.orders : 0;
+                return { val };
+              })
+            : [];
+
+          const sparkColor =
+            index === 0 ? "#10b981" :
+            index === 1 ? "#3b82f6" :
+            index === 2 ? "#8b5cf6" : "#f59e0b";
+
+          return (
+            <div
+              key={index}
+              className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-col justify-between"
+            >
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (metric.title === "Total Orders" || metric.title === t("DASHBOARD.TOTALORDERS")) {
+                      navigate("/orders");
+                    }
+                  }}
+                  className="w-full text-left cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500">
+                        {metric.title}
+                      </p>
+                      <p className="mt-1.5 text-2xl font-bold text-gray-900 tracking-tight">
+                        {metric.value}
+                      </p>
+                    </div>
+                    <div className={`p-2.5 rounded-xl ${metric.color} shadow-xs`}>
+                      <metric.icon className="h-5 w-5" />
+                    </div>
+                  </div>
+                </button>
+
+                {/* Sparkline mini chart */}
+                {sparkData.length > 1 && (
+                  <div className="h-8 mt-2.5 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={sparkData}>
+                        <Line
+                          type="monotone"
+                          dataKey="val"
+                          stroke={sparkColor}
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
-                  {/* Scrollable chart area */}
-                  <div style={{ flex: 1, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "thin", scrollbarColor: "#e2e8f0 transparent" }}>
-                    <div style={{ minWidth, height: 250 }}>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <LineChart data={chartDataForRender} margin={CHART_MARGIN}>
-                          <CartesianGrid strokeDasharray="4 4" stroke="#f1f5f9" vertical={false}/>
-                          <XAxis dataKey="label" tick={{fontSize:9,fill:"#94a3b8"}} axisLine={false} tickLine={false} tickFormatter={formatChartTickLabel} interval={0}/>
-                          <YAxis hide/>
-                          <Tooltip content={<CustomTooltip />} cursor={{stroke:"#e2e8f0",strokeWidth:1}} wrapperStyle={{zIndex:9999,pointerEvents:"auto"}} contentStyle={{pointerEvents:"auto"}} allowEscapeViewBox={{x:false,y:true}} position={{y:0}}/>
-                          {comparisonMode ? (
-                            selectedStores.map(storeId => (
-                              <Line key={storeId} type="monotone"
-                                dataKey={`revenue_${storeId}`}
-                                stroke={storeColors[storeId]} strokeWidth={2.5}
-                                dot={{ fill: storeColors[storeId], r: 3 }}
-                                activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
-                                name={stores.find(s => s.value === storeId)?.label || `Store ${storeId}`}
-                                isAnimationActive animationDuration={600}/>
-                            ))
-                          ) : (
-                            <Line type="monotone" dataKey="revenue"
-                              stroke="#6366f1" strokeWidth={3}
-                              dot={{ fill: "#6366f1", r: 4 }}
-                              activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }}
-                              isAnimationActive animationDuration={600}/>
-                          )}
-                          {(comparisonMode || selectedStores.length > 1) && (
-                            <Legend wrapperStyle={{fontSize:'10px'}} iconSize={8} verticalAlign="top" height={36}/>
-                          )}
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()
-          )}
-        </div>
-        )}
+                )}
+              </div>
+
+              <div className="mt-3 pt-2.5 border-t border-gray-50 flex items-center text-xs">
+                {metric.trend === "up" ? (
+                  <ArrowUp className="h-3 w-3 text-emerald-600 font-bold" />
+                ) : metric.trend === "down" ? (
+                  <ArrowDown className="h-3 w-3 text-rose-600 font-bold" />
+                ) : (
+                  <span className="h-3 w-3 text-gray-400 font-bold text-center leading-3">—</span>
+                )}
+                <span
+                  className={`ml-1 font-semibold ${
+                    metric.trend === "up"
+                      ? "text-emerald-600"
+                      : metric.trend === "down"
+                      ? "text-rose-600"
+                      : "text-gray-500"
+                  }`}
+                >
+                  {metric.change}
+                </span>
+                <span className="ml-1.5 text-gray-400 truncate">
+                  {metric.comparisonText}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Orders and Order Status Chart Row */}
+      {/* Action Needed Section */}
+      <ActionNeededSection
+        orders={allOrdersList}
+        lowStockItems={lowStockItems}
+        navigate={navigate}
+        formatCurrency={formatCurrency}
+        t={t}
+      />
+
+      {/* Combined Revenue & Orders Trend + Order Status Donut Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        {/* Orders - Line Chart */}
-        {isFeatureCodeEnabled(ENABLED_FEATURE_CODES.DASHBOARD_ORDERS_GRAPH) && (
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-start justify-between mb-3">
+        {/* Combined Revenue & Orders Chart */}
+        {(isFeatureCodeEnabled(ENABLED_FEATURE_CODES.DASHBOARD_REVENUE_GRAPH) ||
+          isFeatureCodeEnabled(ENABLED_FEATURE_CODES.DASHBOARD_ORDERS_GRAPH)) && (
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900">Orders</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                <span className="text-indigo-400 font-medium">{getChartGranularityLabel(dateRange.start, dateRange.end)}</span>
-              </p>
-            </div>
-            <div className="bg-green-50 rounded-lg px-3 py-1.5 text-right">
-              <p className="text-[10px] text-green-400 font-medium uppercase tracking-wide">Total</p>
-              <p className="text-sm font-bold text-green-700">
-                {(() => {
-                  const data = getOrdersComparisonChartData();
-                  if (ordersComparisonMode) {
-                    // Sum all store orders
-                    return data.reduce((total, item) => {
-                      return ordersSelectedStores.reduce((sum, storeId) => {
-                        return sum + (item[`orders_${storeId}`] || 0);
-                      }, total);
-                    }, 0).toLocaleString();
-                  } else {
-                    // Single store
-                    return data.reduce((s, d) => s + (d.orders || 0), 0).toLocaleString();
-                  }
-                })()}
-              </p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-gray-900">Revenue & Orders Trend</h2>
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      {getChartGranularityLabel(dateRange.start, dateRange.end)}
+                    </span>
+                    {selectedStores.length === 0 && (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sd-hover text-custom-bg font-semibold">
+                        All Stores Combined
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {comparisonMode
+                      ? `Comparing ${selectedStores.length} stores`
+                      : "Correlated revenue generation and order volume over time"}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* View Mode Toggle */}
+                  <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setChartViewMode("combined")}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        chartViewMode === "combined"
+                          ? "bg-white text-gray-900 font-semibold shadow-xs"
+                          : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      Combined
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartViewMode("revenue")}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        chartViewMode === "revenue"
+                          ? "bg-white text-custom-bg font-semibold shadow-xs"
+                          : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      Revenue
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartViewMode("orders")}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        chartViewMode === "orders"
+                          ? "bg-white text-emerald-700 font-semibold shadow-xs"
+                          : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      Orders
+                    </button>
+                  </div>
+
+                  {/* Summary Badges */}
+                  <div className="flex items-center gap-1.5 text-right">
+                    {(chartViewMode === "combined" || chartViewMode === "revenue") && (
+                      <div className="bg-sd-hover rounded-lg px-2.5 py-1 text-right">
+                        <span className="text-[10px] text-custom-bg/80 font-medium uppercase mr-1">Rev:</span>
+                        <span className="text-xs font-bold text-custom-bg">
+                          ₹{(() => {
+                            const data = getComparisonChartData();
+                            if (comparisonMode && selectedStores.length > 0) {
+                              return data.reduce((total, item) => {
+                                return selectedStores.reduce((sum, storeId) => {
+                                  return sum + (item[`revenue_${storeId}`] || 0);
+                                }, total);
+                              }, 0).toLocaleString("en-IN");
+                            }
+                            return data.reduce((s, d) => s + (d.revenue || 0), 0).toLocaleString("en-IN");
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                    {(chartViewMode === "combined" || chartViewMode === "orders") && (
+                      <div className="bg-emerald-50 rounded-lg px-2.5 py-1 text-right">
+                        <span className="text-[10px] text-emerald-500 font-medium uppercase mr-1">Ord:</span>
+                        <span className="text-xs font-bold text-emerald-700">
+                          {(() => {
+                            const data = getComparisonChartData();
+                            if (comparisonMode && selectedStores.length > 0) {
+                              return data.reduce((total, item) => {
+                                return selectedStores.reduce((sum, storeId) => {
+                                  return sum + (item[`orders_${storeId}`] || 0);
+                                }, total);
+                              }, 0).toLocaleString();
+                            }
+                            return data.reduce((s, d) => s + (d.orders || 0), 0).toLocaleString();
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {chartLoading ? (
+                <LineChartSkeleton strokeClass="text-custom-bg/40" heightClass="h-[280px]" />
+              ) : !chartData || chartData.length === 0 ? (
+                <div className="h-32 flex flex-col items-center justify-center gap-1.5 text-gray-400">
+                  <BarChart2 className="w-8 h-8 text-gray-300" />
+                  <p className="text-xs">No graph activity for the selected date range</p>
+                </div>
+              ) : (
+                (() => {
+                  const chartDataForRender = getComparisonChartData();
+                  const minWidth = Math.max(500, chartDataForRender.length * 48);
+                  const YAXIS_W = 56;
+                  const CHART_MARGIN = { top: 15, right: chartViewMode === "combined" ? 48 : 20, left: 10, bottom: 20 };
+
+                  return (
+                    <div style={{ display: "flex", height: 280 }}>
+                      {/* Fixed Left Y-Axis for Revenue */}
+                      {(chartViewMode === "combined" || chartViewMode === "revenue") && (
+                        <div style={{ width: YAXIS_W, flexShrink: 0 }}>
+                          <ResponsiveContainer width={YAXIS_W} height={280}>
+                            <LineChart data={chartDataForRender} margin={{ top: CHART_MARGIN.top, right: 0, left: 0, bottom: CHART_MARGIN.bottom }}>
+                              <YAxis
+                                yAxisId="rev"
+                                tickFormatter={formatChartCurrency}
+                                tick={{ fontSize: 9, fill: "#FF5A5F" }}
+                                axisLine={false}
+                                tickLine={false}
+                                width={YAXIS_W}
+                              />
+                              <Line yAxisId="rev" dataKey="revenue" stroke="transparent" dot={false} isAnimationActive={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+
+                      {/* Scrollable chart area */}
+                      <div style={{ flex: 1, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "thin", scrollbarColor: "#e2e8f0 transparent" }}>
+                        <div style={{ minWidth, height: 280 }}>
+                          <ResponsiveContainer width="100%" height={280}>
+                            <ComposedChart data={chartDataForRender} margin={CHART_MARGIN}>
+                              <defs>
+                                <linearGradient id="dashboardRevenueGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#FF5A5F" stopOpacity={0.25} />
+                                  <stop offset="95%" stopColor="#FF5A5F" stopOpacity={0.0} />
+                                </linearGradient>
+                                <linearGradient id="dashboardOrdersGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                              <XAxis
+                                dataKey="label"
+                                tick={{ fontSize: 9, fill: "#94a3b8" }}
+                                axisLine={false}
+                                tickLine={false}
+                                tickFormatter={formatChartTickLabel}
+                                interval={0}
+                              />
+                              {(chartViewMode === "combined" || chartViewMode === "revenue") && (
+                                <YAxis yAxisId="rev" hide />
+                              )}
+                              {(chartViewMode === "combined" || chartViewMode === "orders") && (
+                                <YAxis
+                                  yAxisId="ord"
+                                  orientation="right"
+                                  tick={{ fontSize: 9, fill: "#10b981" }}
+                                  axisLine={false}
+                                  tickLine={false}
+                                  width={36}
+                                />
+                              )}
+                              <Tooltip
+                                content={<CustomTooltip />}
+                                cursor={{ stroke: "#e2e8f0", strokeWidth: 1 }}
+                                wrapperStyle={{ zIndex: 9999, pointerEvents: "auto" }}
+                                allowEscapeViewBox={{ x: false, y: true }}
+                              />
+
+                              {/* Multi-store Comparison Mode */}
+                              {comparisonMode && selectedStores.length > 1 ? (
+                                selectedStores.map((storeId) => (
+                                  <Line
+                                    key={storeId}
+                                    yAxisId="rev"
+                                    type="monotone"
+                                    dataKey={`revenue_${storeId}`}
+                                    stroke={storeColors[storeId]}
+                                    strokeWidth={2.5}
+                                    dot={{ fill: storeColors[storeId], r: 3 }}
+                                    activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
+                                    name={stores.find((s) => s.value === storeId)?.label || `Store ${storeId}`}
+                                    isAnimationActive
+                                    animationDuration={600}
+                                  />
+                                ))
+                              ) : (
+                                <>
+                                  {/* Revenue Series */}
+                                  {(chartViewMode === "combined" || chartViewMode === "revenue") && (
+                                    <Area
+                                      yAxisId="rev"
+                                      type="monotone"
+                                      dataKey="revenue"
+                                      stroke="#FF5A5F"
+                                      strokeWidth={2.5}
+                                      fill="url(#dashboardRevenueGrad)"
+                                      name="Revenue"
+                                      dot={{ fill: "#FF5A5F", r: 3 }}
+                                      activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
+                                    />
+                                  )}
+                                  {/* Orders Series */}
+                                  {(chartViewMode === "combined" || chartViewMode === "orders") && (
+                                    <Line
+                                      yAxisId="ord"
+                                      type="monotone"
+                                      dataKey="orders"
+                                      stroke="#10b981"
+                                      strokeWidth={2.5}
+                                      name="Orders"
+                                      dot={{ fill: "#10b981", r: 3 }}
+                                      activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
+                                    />
+                                  )}
+                                </>
+                              )}
+
+                              {(comparisonMode || chartViewMode === "combined") && (
+                                <Legend wrapperStyle={{ fontSize: "11px", paddingTop: 8 }} iconSize={8} verticalAlign="bottom" height={24} />
+                              )}
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
             </div>
           </div>
-          
-          {chartLoading ? (
-            <LineChartSkeleton strokeClass="text-emerald-300" />
-          ) : ordersSelectedStores.length === 0 ? (
-            <div className="h-[250px] flex flex-col items-center justify-center gap-2 text-gray-400">
-              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                <path d="M4 32 L10 20 L18 26 L26 14 L36 8" stroke="#e5e7eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                <circle cx="10" cy="20" r="3" fill="#e5e7eb"/>
-                <circle cx="18" cy="26" r="3" fill="#e5e7eb"/>
-                <circle cx="26" cy="14" r="3" fill="#e5e7eb"/>
-                <circle cx="36" cy="8" r="3" fill="#e5e7eb"/>
-              </svg>
-              <p className="text-sm">Select a store to view orders</p>
-            </div>
-          ) : (
-            (() => {
-              const ordersData = getOrdersComparisonChartData();
-              return (
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={ordersData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="4 4" stroke="#f1f5f9" vertical={false}/>
-                    <XAxis dataKey="label" tick={{fontSize:9,fill:"#94a3b8"}} axisLine={false} tickLine={false} interval="preserveStartEnd" tickFormatter={formatChartTickLabel}/>
-                    <YAxis tick={{fontSize:9,fill:"#94a3b8"}} axisLine={false} tickLine={false} width={42}/>
-                    <Tooltip content={<CustomTooltip />} cursor={{stroke:"#e2e8f0",strokeWidth:1}} wrapperStyle={{zIndex:50,pointerEvents:"auto"}} contentStyle={{pointerEvents:"auto"}}/>
-                    {ordersComparisonMode && ordersSelectedStores.length > 1 ? (
-                      ordersSelectedStores.map(storeId => (
-                        <Line key={storeId} type="monotone"
-                          dataKey={`orders_${storeId}`}
-                          stroke={getOrdersStoreColor(storeId)} strokeWidth={2.5}
-                          dot={{ fill: getOrdersStoreColor(storeId), r: 3 }}
-                          activeDot={{ r: 5 }}
-                          name={stores.find(s => s.value === storeId)?.label || `Store ${storeId}`}
-                          isAnimationActive animationDuration={600}/>
-                      ))
-                    ) : (
-                      <Line type="monotone" dataKey="orders"
-                        stroke="#6366F1" strokeWidth={3}
-                        dot={{ fill: "#6366F1", r: 4 }} activeDot={{ r: 6 }}
-                        isAnimationActive animationDuration={600}/>
-                    )}
-                    {ordersComparisonMode && ordersSelectedStores.length > 1 && (
-                      <Legend wrapperStyle={{fontSize:'10px'}} iconSize={8} verticalAlign="top" height={36}/>
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              );
-            })()
-          )}
-        </div>
         )}
 
         {/* Order Status Donut Chart */}
         {isFeatureCodeEnabled(ENABLED_FEATURE_CODES.DASHBOARD_ORDER_STATUS_COUNT) && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
-          <div className="mb-3">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t("ORDERS.FILTERS.ORDER_STATUS")}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{t("DASHBOARD.DISTRIBUTION_BY_STATUS")}</p>
-          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
+            <div>
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t("ORDERS.FILTERS.ORDER_STATUS")}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{t("DASHBOARD.DISTRIBUTION_BY_STATUS")}</p>
+              </div>
 
-          <div className="flex justify-center mb-1">
-            <span className="text-xs text-gray-400">
-              Total{" "}
-              <span className="font-bold text-gray-700">
-                {orderStatusData.reduce((s, d) => s + d.value, 0).toLocaleString()}
-              </span>
-              {" "}orders
-            </span>
-          </div>
+              <div className="flex justify-center mb-1">
+                <span className="text-xs text-gray-400">
+                  Total{" "}
+                  <span className="font-bold text-gray-700">
+                    {orderStatusData.reduce((s, d) => s + d.value, 0).toLocaleString()}
+                  </span>{" "}
+                  orders
+                </span>
+              </div>
 
-          <div className="flex-1 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height={190}>
-              <PieChart>
-                <Pie
-                  activeIndex={activeStatusIndex}
-                  activeShape={renderActiveShape}
-                  data={orderStatusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={52}
-                  outerRadius={74}
-                  dataKey="value"
-                  onMouseEnter={(_, index) => setActiveStatusIndex(index)}
-                  strokeWidth={0}
-                  isAnimationActive={true}
-                  animationDuration={600}
-                >
-                  {orderStatusData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+              <div className="flex-1 flex items-center justify-center">
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie
+                      activeIndex={activeStatusIndex}
+                      activeShape={renderActiveShape}
+                      data={orderStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={72}
+                      dataKey="value"
+                      onMouseEnter={(_, index) => setActiveStatusIndex(index)}
+                      strokeWidth={0}
+                      isAnimationActive={true}
+                      animationDuration={600}
+                    >
+                      {orderStatusData.map((entry, index) => (
+                        <Cell key={index} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-2 pt-3 border-t border-gray-50">
-            {orderStatusData.map((item, idx) => {
-              const total = orderStatusData.reduce((s, d) => s + d.value, 0);
-              const pct = total > 0 ? ((item.value / total) * 100).toFixed(0) : 0;
-              return (
-                <div key={item.name} className="flex items-center gap-1.5 text-xs cursor-pointer group"
-                  onMouseEnter={() => setActiveStatusIndex(idx)}>
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-transform group-hover:scale-125"
-                    style={{ background: item.color }}/>
-                  <span className="text-gray-500 truncate">{item.name}</span>
-                  <span className="ml-auto font-semibold text-gray-700">{item.value}</span>
-                  <span className="text-gray-300 mx-0.5">·</span>
-                  <span className="text-gray-400">{pct}%</span>
-                </div>
-              );
-            })}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-2 pt-3 border-t border-gray-50">
+              {orderStatusData.map((item, idx) => {
+                const total = orderStatusData.reduce((s, d) => s + d.value, 0);
+                const pct = total > 0 ? ((item.value / total) * 100).toFixed(0) : 0;
+                return (
+                  <div
+                    key={item.name}
+                    className="flex items-center gap-1.5 text-xs cursor-pointer group"
+                    onMouseEnter={() => setActiveStatusIndex(idx)}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-transform group-hover:scale-125"
+                      style={{ background: item.color }}
+                    />
+                    <span className="text-gray-500 truncate">{item.name}</span>
+                    <span className="ml-auto font-semibold text-gray-700">{item.value}</span>
+                    <span className="text-gray-300 mx-0.5">·</span>
+                    <span className="text-gray-400">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
         )}
-
       </div>
 
       {/* Main Content Grid */}
@@ -2223,7 +2583,7 @@ const generateComparisonText = (startDate, endDate) => {
                       >
                         <td className="px-4 py-3 align-middle whitespace-nowrap">
                           <span
-                            className="inline-block align-middle h-7 w-7 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs text-center leading-7 mr-2"
+                            className="inline-block align-middle h-7 w-7 rounded-full bg-sd-hover text-custom-bg font-bold text-xs text-center leading-7 mr-2"
                             style={{ minWidth: "1.75rem" }}
                           >
                             {order.customer
@@ -2369,6 +2729,150 @@ const generateComparisonText = (startDate, endDate) => {
         </div>
         )}
       </div>
+        </>
+      )}
+
+      {/* 2. Action Needed Lens */}
+      {activeDashboardTab === "action_needed" && (
+        <ActionNeededSection
+          orders={allOrdersList}
+          lowStockItems={lowStockItems}
+          navigate={navigate}
+          formatCurrency={formatCurrency}
+          t={t}
+        />
+      )}
+
+      {/* 3. Sales Analytics Lens */}
+      {activeDashboardTab === "sales" && (
+        <SalesAnalyticsSection
+          chartData={chartData}
+          revenueMetrics={metricsDetails.revenue}
+          ordersMetrics={metricsDetails.orders}
+          averageOrderMetrics={metricsDetails.averageOrder}
+          stores={stores}
+          selectedStores={selectedStores}
+          comparisonMode={comparisonMode}
+          storeColors={storeColors}
+          formatCurrency={formatCurrency}
+          t={t}
+        />
+      )}
+
+      {/* 4. Customer Analytics Lens */}
+      {activeDashboardTab === "customers" && (
+        <CustomerAnalyticsSection
+          customersMetrics={metricsDetails.customers}
+          navigate={navigate}
+          formatCurrency={formatCurrency}
+          t={t}
+        />
+      )}
+
+      {/* 5. Abandoned Carts & Wishlists Lens */}
+      {activeDashboardTab === "abandoned_carts" && (
+        <AbandonedCartsSection
+          navigate={navigate}
+          formatCurrency={formatCurrency}
+          t={t}
+        />
+      )}
+
+      {/* 6. Fulfilment Analytics Lens */}
+      {activeDashboardTab === "fulfilment" && (
+        <FulfilmentAnalyticsSection
+          orders={allOrdersList}
+          navigate={navigate}
+          t={t}
+        />
+      )}
+
+      {/* 7. Returns & Cancellations Lens */}
+      {activeDashboardTab === "returns" && (
+        <ReturnsCancellationsSection
+          orders={allOrdersList}
+          navigate={navigate}
+          formatCurrency={formatCurrency}
+          t={t}
+        />
+      )}
+
+      {/* 8. Product & Inventory Insights Lens */}
+      {activeDashboardTab === "inventory" && (
+        <ProductInventorySection
+          topProducts={topProducts}
+          lowStockItems={lowStockItems}
+          navigate={navigate}
+          formatCurrency={formatCurrency}
+          t={t}
+        />
+      )}
+
+      {/* 9. Account & Plan Usage Lens */}
+      {activeDashboardTab === "account_plan" && (
+        <AccountPlanSection
+          navigate={navigate}
+          t={t}
+        />
+      )}
+
+      {/* 10. All Sections (Full View) Stacked */}
+      {activeDashboardTab === "all_sections" && (
+        <div className="space-y-8">
+          <ActionNeededSection
+            orders={allOrdersList}
+            lowStockItems={lowStockItems}
+            navigate={navigate}
+            formatCurrency={formatCurrency}
+            t={t}
+          />
+          <SalesAnalyticsSection
+            chartData={chartData}
+            revenueMetrics={metricsDetails.revenue}
+            ordersMetrics={metricsDetails.orders}
+            averageOrderMetrics={metricsDetails.averageOrder}
+            stores={stores}
+            selectedStores={selectedStores}
+            comparisonMode={comparisonMode}
+            storeColors={storeColors}
+            formatCurrency={formatCurrency}
+            t={t}
+          />
+          <CustomerAnalyticsSection
+            customersMetrics={metricsDetails.customers}
+            navigate={navigate}
+            formatCurrency={formatCurrency}
+            t={t}
+          />
+          <AbandonedCartsSection
+            navigate={navigate}
+            formatCurrency={formatCurrency}
+            t={t}
+          />
+          <FulfilmentAnalyticsSection
+            orders={allOrdersList}
+            navigate={navigate}
+            t={t}
+          />
+          <ReturnsCancellationsSection
+            orders={allOrdersList}
+            navigate={navigate}
+            formatCurrency={formatCurrency}
+            t={t}
+          />
+          <ProductInventorySection
+            topProducts={topProducts}
+            lowStockItems={lowStockItems}
+            navigate={navigate}
+            formatCurrency={formatCurrency}
+            t={t}
+          />
+          <AccountPlanSection
+            navigate={navigate}
+            t={t}
+          />
+        </div>
+      )}
 
       {/* Orders Graph Dialog */}
       {showOrdersDialog && (

@@ -3,6 +3,8 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import { logout } from "../store/slices/authSlice";
 import { useSelector, useDispatch } from "react-redux";
+import AiChatWidget from "../components/chat/AiChatWidget";
+import ChatwootWidget from "../components/chat/ChatwootWidget";
 
 const Layout = ({ children }) => {
   const [bIsSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -56,6 +58,12 @@ const Layout = ({ children }) => {
         <Header onMenuClick={() => setIsMobileSidebarOpen(!bIsMobileSidebarOpen)} />
         <main className="flex-1 p-4 lg:p-6">{children}</main>
       </div>
+
+      {/* Floating AI Chat Board Widget */}
+      <AiChatWidget />
+
+      {/* Chatwoot Live AI Chat Widget */}
+      <ChatwootWidget />
     </div>
   );
 };

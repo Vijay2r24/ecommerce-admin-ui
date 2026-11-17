@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Warehouse,
   FileX ,
+  Bot,
 } from 'lucide-react';
 import { permissionIdsInclude } from '../utils/permissionUtils';
 import {
@@ -48,6 +49,12 @@ const Sidebar = ({ onClose, isCollapsed, onToggle, isMobileOpen, onMobileClose }
       href: '/dashboard',
       icon: LayoutDashboard,
       section: 'Dashbord',
+    },
+    {
+      name: t('SIDEBAR.AI_CHAT') || 'AI Chat Board',
+      href: '/chat',
+      icon: Bot,
+      relatedPaths: ['/ai-assistant']
     },
     {
       name: t('SIDEBAR.ORDERS'),

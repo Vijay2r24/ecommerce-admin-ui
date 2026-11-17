@@ -82,6 +82,7 @@ import PlanGate from './pages/PlanGate';
 import Cancellations from './pages/Cancellation.jsx';
 import CreateReason from './pages/CreateReason.jsx';
 import LowStock from './pages/products/LoweStock.jsx';
+import AiChatBoard from './pages/chat/AiChatBoard.jsx';
 
 const PublicRoute = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -294,6 +295,24 @@ const App = () => {
                   element={
                     <ProtectedRoute permissionCode={getPermissionCode(MODULES.DASHBOARD, PERMISSIONS.VIEW_DASHBOARD)}>
                       <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* AI Chat Board */}
+                <Route
+                  path="/chat"
+                  element={
+                    <ProtectedRoute>
+                      <AiChatBoard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/ai-assistant"
+                  element={
+                    <ProtectedRoute>
+                      <AiChatBoard />
                     </ProtectedRoute>
                   }
                 />

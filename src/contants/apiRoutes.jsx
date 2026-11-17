@@ -176,3 +176,5 @@ export const GET_REASONS_LIST='/getReasonList';
 export const GET_REASONSBYID='/getReasonById';
 export const UPDATE_REASONS_STATUS='/updateReasonStatus';
 export const GET_LOW_STOCK = `/getLowStockProducts`;
+export const AI_CHAT_API = import.meta.env.VITE_AI_CHAT_ENDPOINT || `/chat`;
+export const AI_CHAT_HISTORY_API = import.meta.env.VITE_AI_CHAT_HISTORY_ENDPOINT || `/chat/history`;

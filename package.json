@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server/server.js",
+    "server:install": "npm --prefix server install",
     "start": "react-scripts start",
     "build": "vite build",
     "lint": "eslint .",

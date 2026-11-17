@@ -155,6 +155,8 @@ export const APP_ROUTES = {
   UPGRADE_PLAN: "/upgrade-plan",
   LOW_STOCK: "/low-stock",
   CANCELLATIONS: "/cancellations",
+  CHAT: "/chat",
+  AI_ASSISTANT: "/ai-assistant",
 };
 
 /** Product Setup (`/browse`) tab keys — keep in sync with plan + permission maps. */
@@ -1054,6 +1056,7 @@ export const PERMISSIONS = {
 };
 
 export const QUICK_FILTER_KEYS = {
+  TODAY: "today",
   NEXT_3_HOURS: "next3hours",
   NEXT_6_HOURS: "next6hours",
   NEXT_12_HOURS: "next12hours",
@@ -1066,24 +1069,32 @@ export const QUICK_FILTER_KEYS = {
   LAST_24_HOURS: "last24hours",
   LAST_2_DAYS: "last2days",
   LAST_7_DAYS: "last7days",
+  LAST_30_DAYS: "last30days",
+  THIS_MONTH: "thismonth",
 };
 
 export const PAST_QUICK_FILTER_VALUES = [
+  QUICK_FILTER_KEYS.TODAY,
   QUICK_FILTER_KEYS.LAST_3_HOURS,
   QUICK_FILTER_KEYS.LAST_6_HOURS,
   QUICK_FILTER_KEYS.LAST_12_HOURS,
   QUICK_FILTER_KEYS.LAST_24_HOURS,
   QUICK_FILTER_KEYS.LAST_2_DAYS,
   QUICK_FILTER_KEYS.LAST_7_DAYS,
+  QUICK_FILTER_KEYS.LAST_30_DAYS,
+  QUICK_FILTER_KEYS.THIS_MONTH,
 ];
 
 export const PAST_QUICK_FILTER_LABELS = [
+  "Today",
   "Last 3 Hours",
   "Last 6 Hours",
   "Last 12 Hours",
   "Last 24 Hours",
   "Last 2 Days",
   "Last 7 Days",
+  "Last 30 Days",
+  "This Month",
 ];
 
 export const FUTURE_QUICK_FILTER_VALUES = [
